@@ -1,118 +1,83 @@
-import { Pool } from "pg";
-import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
-import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
-import { PGlite } from "@electric-sql/pglite";
-import * as path from "node:path";
-import * as fs from "node:fs";
+import { drizzle } from "drizzle-orm/d1";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import * as schema from "./schema";
 
-const databaseUrl = process.env.DATABASE_URL;
-
-export type AppDb = ReturnType<typeof drizzleNodePg>;
-
-const globalForDb = globalThis as typeof globalThis & {
-  __arenaNextJsPostgresqlPool?: Pool;
-  __arenaNextJsPglite?: PGlite;
-  __arenaNextJsDb?: AppDb;
-  __arenaSchemaInitialized?: boolean;
-};
+export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS competitions (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'setup',
-  drop_highest BOOLEAN NOT NULL DEFAULT FALSE,
-  drop_lowest BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  drop_highest INTEGER NOT NULL DEFAULT 0,
+  drop_lowest INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
 CREATE TABLE IF NOT EXISTS criteria (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   weight INTEGER NOT NULL DEFAULT 100,
   max_score REAL NOT NULL DEFAULT 10,
   sort INTEGER NOT NULL DEFAULT 0
 );
+
 CREATE TABLE IF NOT EXISTS contestants (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   sort INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
 CREATE TABLE IF NOT EXISTS judges (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
 CREATE TABLE IF NOT EXISTS scores (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
   judge_id INTEGER NOT NULL REFERENCES judges(id) ON DELETE CASCADE,
   contestant_id INTEGER NOT NULL REFERENCES contestants(id) ON DELETE CASCADE,
   criterion_id INTEGER NOT NULL REFERENCES criteria(id) ON DELETE CASCADE,
   value REAL NOT NULL,
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
 CREATE UNIQUE INDEX IF NOT EXISTS scores_judge_contestant_criterion ON scores(judge_id, contestant_id, criterion_id);
 CREATE INDEX IF NOT EXISTS scores_competition_idx ON scores(competition_id);
+CREATE INDEX IF NOT EXISTS criteria_competition_idx ON criteria(competition_id);
+CREATE INDEX IF NOT EXISTS contestants_competition_idx ON contestants(competition_id);
+CREATE INDEX IF NOT EXISTS judges_competition_idx ON judges(competition_id);
 `;
 
-function createDb() {
-  if (databaseUrl) {
-    const pool =
-      globalForDb.__arenaNextJsPostgresqlPool ??
-      new Pool({
-        connectionString: databaseUrl,
-      });
-
-    if (process.env.NODE_ENV !== "production") {
-      globalForDb.__arenaNextJsPostgresqlPool = pool;
-    }
-
-    return drizzleNodePg(pool);
-  }
-
-  // Fallback to embedded PGlite for zero-config local testing
-  const dataDir = path.join(process.cwd(), ".data");
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  const dbPath =
-    process.env.PG_IN_MEMORY === "true"
-      ? undefined
-      : path.join(dataDir, "pglite");
-
-  const client =
-    globalForDb.__arenaNextJsPglite ??
-    new PGlite(dbPath);
-
-  if (process.env.NODE_ENV !== "production") {
-    globalForDb.__arenaNextJsPglite = client;
-  }
-
-  if (!globalForDb.__arenaSchemaInitialized) {
-    client.exec(SCHEMA_SQL).catch((err) => {
-      console.error("[PGlite] Schema initialization error:", err);
-    });
-    globalForDb.__arenaSchemaInitialized = true;
-  }
-
-  return drizzlePglite(client) as unknown as AppDb;
-}
+let schemaInitialized = false;
 
 export function getDb(): AppDb {
-  if (globalForDb.__arenaNextJsDb) {
-    return globalForDb.__arenaNextJsDb;
+  try {
+    const ctx = getCloudflareContext();
+    const d1 = (ctx.env as { DB?: any })?.DB;
+    if (d1) {
+      if (!schemaInitialized) {
+        d1.exec(SCHEMA_SQL).catch((err: unknown) => {
+          console.error("[D1] Auto-init schema error:", err);
+        });
+        schemaInitialized = true;
+      }
+      return drizzle(d1, { schema });
+    }
+  } catch {
+    // Outside request context (e.g. build phase)
   }
-  const instance = createDb();
-  globalForDb.__arenaNextJsDb = instance;
-  return instance;
+
+  return drizzle({} as any, { schema });
 }
 
-export const db = new Proxy({} as AppDb, {
+export const db: AppDb = new Proxy({} as AppDb, {
   get(_target, prop, receiver) {
     const targetDb = getDb();
     const value = Reflect.get(targetDb, prop, receiver);
@@ -122,5 +87,3 @@ export const db = new Proxy({} as AppDb, {
     return value;
   },
 });
-
-export const pool = globalForDb.__arenaNextJsPostgresqlPool;

@@ -13,8 +13,10 @@
 # production
 /build
 
-# local database
+# local database & cloudflare build
 /.data/
+/.open-next/
+/.wrangler/
 
 # env files
 .env*.local

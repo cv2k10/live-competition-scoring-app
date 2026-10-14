@@ -1,30 +1,34 @@
 import {
-  pgTable,
-  serial,
+  sqliteTable,
   text,
-  boolean,
   integer,
   real,
-  timestamp,
   index,
   uniqueIndex,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
-export const competitions = pgTable("competitions", {
-  id: serial("id").primaryKey(),
+export const competitions = sqliteTable("competitions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   status: text("status", { enum: ["setup", "live", "finished"] })
     .notNull()
     .default("setup"),
-  dropHighest: boolean("drop_highest").notNull().default(false),
-  dropLowest: boolean("drop_lowest").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  dropHighest: integer("drop_highest", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  dropLowest: integer("drop_lowest", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
 });
 
-export const criteria = pgTable(
+export const criteria = sqliteTable(
   "criteria",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey({ autoIncrement: true }),
     competitionId: integer("competition_id")
       .notNull()
       .references(() => competitions.id, { onDelete: "cascade" }),
@@ -36,37 +40,41 @@ export const criteria = pgTable(
   (t) => [index("criteria_competition_idx").on(t.competitionId)],
 );
 
-export const contestants = pgTable(
+export const contestants = sqliteTable(
   "contestants",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey({ autoIncrement: true }),
     competitionId: integer("competition_id")
       .notNull()
       .references(() => competitions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     sort: integer("sort").notNull().default(0),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("contestants_competition_idx").on(t.competitionId)],
 );
 
-export const judges = pgTable(
+export const judges = sqliteTable(
   "judges",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey({ autoIncrement: true }),
     competitionId: integer("competition_id")
       .notNull()
       .references(() => competitions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("judges_competition_idx").on(t.competitionId)],
 );
 
-export const scores = pgTable(
+export const scores = sqliteTable(
   "scores",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey({ autoIncrement: true }),
     competitionId: integer("competition_id")
       .notNull()
       .references(() => competitions.id, { onDelete: "cascade" }),
@@ -80,7 +88,9 @@ export const scores = pgTable(
       .notNull()
       .references(() => criteria.id, { onDelete: "cascade" }),
     value: real("value").notNull(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (t) => [
     uniqueIndex("scores_judge_contestant_criterion").on(
