@@ -21,6 +21,7 @@ import {
   IconMic,
   IconUsers,
   IconRefresh,
+  IconDownload,
 } from "@/components/icons";
 
 type ConfirmState = { kind: "contestant" | "judge" | "criterion" | "comp"; id: number } | null;
@@ -34,6 +35,7 @@ export default function SetupPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const [name, setName] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
@@ -279,6 +281,31 @@ export default function SetupPage() {
     toast(ok ? msg : t.common.copyFailed, ok ? "ok" : "err");
   }
 
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/competitions/${id}/export`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || t.setup.exportFail);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${comp?.name || "competition"}_data.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast(t.setup.exportSuccess);
+    } catch (e) {
+      toast((e as Error).message, "err");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   /* ---------------- render ---------------- */
 
   if (loadError) {
@@ -375,6 +402,15 @@ export default function SetupPage() {
                 {t.setup.reopenComp}
               </button>
             )}
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleExport}
+              disabled={exporting}
+              title={t.setup.exportBtn}
+            >
+              <IconDownload width={14} height={14} />
+              {exporting ? t.setup.exporting : t.setup.exportBtn}
+            </button>
             {comp.status !== "live" && (
               <button
                 className={`btn btn-sm ${confirm?.kind === "comp" ? "btn-danger" : "btn-ghost"}`}
@@ -455,6 +491,14 @@ export default function SetupPage() {
                 >
                   <IconLink width={15} height={15} />
                   {t.setup.copyLiveLinkBtn}
+                </button>
+                <button
+                  className="btn btn-ghost w-full"
+                  onClick={handleExport}
+                  disabled={exporting}
+                >
+                  <IconDownload width={15} height={15} />
+                  {exporting ? t.setup.exporting : t.setup.exportBtn}
                 </button>
               </div>
               <p className="mt-3 text-xs leading-relaxed text-[var(--muted)]">

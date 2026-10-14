@@ -82,3 +82,33 @@ export interface Board {
   judges: BoardJudge[];
   totalJudges: number;
 }
+
+export interface ExportScore {
+  contestantIndex: number;
+  judgeIndex: number;
+  criterionIndex: number;
+  value: number;
+}
+
+export interface CompetitionExportData {
+  competition: {
+    name: string;
+    status: CompetitionStatus;
+    dropHighest: boolean;
+    dropLowest: boolean;
+  };
+  criteria: Array<{
+    name: string;
+    weight: number;
+    maxScore: number;
+    sort?: number;
+  }>;
+  judges: Array<{
+    name: string;
+  }>;
+  contestants: Array<{
+    name: string;
+    sort?: number;
+  }>;
+  scores?: ExportScore[];
+}

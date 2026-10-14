@@ -16,7 +16,10 @@ import {
   IconMic,
   IconUsers,
   IconBolt,
+  IconUpload,
+  IconDownload,
 } from "@/components/icons";
+import { ImportModal } from "@/components/ImportModal";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -25,6 +28,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [exportingId, setExportingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -78,6 +83,31 @@ export default function DashboardPage() {
     }
   }
 
+  async function exportComp(id: number, compName: string) {
+    setExportingId(id);
+    try {
+      const res = await fetch(`/api/competitions/${id}/export`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || t.setup.exportFail);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${compName || "competition"}_data.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast(t.setup.exportSuccess);
+    } catch (e) {
+      toast((e as Error).message, "err");
+    } finally {
+      setExportingId(null);
+    }
+  }
+
   const liveCount = comps?.filter((c) => c.status === "live").length ?? 0;
 
   return (
@@ -109,7 +139,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 创建栏 */}
+        {/* 创建 / 导入栏 */}
         <div className="card fade-up mb-8 flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
           <input
             className="input sm:max-w-sm"
@@ -122,6 +152,14 @@ export default function DashboardPage() {
           <button className="btn btn-primary" onClick={create} disabled={creating}>
             <IconPlus width={15} height={15} />
             {creating ? t.dashboard.creating : t.dashboard.createBtn}
+          </button>
+          <div className="hidden sm:block h-6 w-px bg-[var(--line)]" />
+          <button
+            className="btn btn-ghost"
+            onClick={() => setShowImport(true)}
+          >
+            <IconUpload width={15} height={15} />
+            {t.dashboard.importBtn}
           </button>
         </div>
 
@@ -147,6 +185,15 @@ export default function DashboardPage() {
             <p className="mt-1 text-sm text-[var(--muted)]">
               {t.dashboard.emptySubtitle}
             </p>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowImport(true)}
+              >
+                <IconUpload width={15} height={15} />
+                {t.dashboard.importBtn}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -196,6 +243,17 @@ export default function DashboardPage() {
                     {t.dashboard.liveBtn}
                   </Link>
                   <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => exportComp(c.id, c.name)}
+                    disabled={exportingId === c.id}
+                    title={t.dashboard.exportBtn}
+                  >
+                    <IconDownload width={14} height={14} />
+                    <span className="hidden md:inline">
+                      {exportingId === c.id ? t.setup.exporting : t.dashboard.exportBtn}
+                    </span>
+                  </button>
+                  <button
                     className={`btn btn-sm ${
                       confirmId === c.id ? "btn-danger" : "btn-ghost"
                     }`}
@@ -211,6 +269,12 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      <ImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={(created) => router.push(`/c/${created.id}`)}
+      />
     </div>
   );
 }
